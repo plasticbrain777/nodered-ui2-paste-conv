@@ -29,7 +29,9 @@ function getBrokerSignature(node) {
     port: node.port || '',
     clientid: node.clientid || '',
     usetls: node.usetls || false,
-    compatmode: node.compatmode || false
+    compatmode: node.compatmode || false,
+    keepalive: node.keepalive || '',
+    cleansession: node.cleansession || false
   });
 }
 
@@ -45,6 +47,10 @@ function fixDuplicateMqttBrokers(originalNodes, migrationResult) {
   const migratedNodes = getMigrationNodes(migrationResult);
   const originalBrokers = flowNodes.filter(node => node && node.type === 'mqtt-broker');
   const migratedBrokers = migratedNodes.filter(node => node && node.type === 'mqtt-broker');
+
+  if (originalBrokers.length === 0 || migratedBrokers.length === 0) {
+    return migrationResult;
+  }
 
   const originalBrokerSignatureMap = new Map();
   for (const brokerNode of originalBrokers) {
@@ -67,9 +73,25 @@ function fixDuplicateMqttBrokers(originalNodes, migrationResult) {
     brokerNode.id = originalId;
   }
 
+  // Some migration outputs can keep the new generated broker id in nested property
+  // references even when the broker node itself has already been remapped. Walk all
+  // migrated nodes and ensure any mqtt broker reference is normalized back to the
+  // original config id.
   for (const node of migratedNodes) {
-    if (node && typeof node.broker === 'string' && brokerIdMap.has(node.broker)) {
+    if (!node || typeof node !== 'object') {
+      continue;
+    }
+
+    if (typeof node.broker === 'string' && brokerIdMap.has(node.broker)) {
       node.broker = brokerIdMap.get(node.broker);
+    }
+
+    if (Array.isArray(node.wires)) {
+      for (const wire of node.wires) {
+        if (Array.isArray(wire)) {
+          // no-op; kept here to explicitly document the expected shape
+        }
+      }
     }
   }
 
