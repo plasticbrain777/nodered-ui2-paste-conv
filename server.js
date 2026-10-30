@@ -17,11 +17,71 @@ function getMigrationNodes(migrationResult) {
   return [];
 }
 
+function getBrokerSignature(node) {
+  if (!node || typeof node !== 'object') {
+    return '';
+  }
+
+  return JSON.stringify({
+    type: node.type,
+    name: node.name || '',
+    broker: node.broker || '',
+    port: node.port || '',
+    clientid: node.clientid || '',
+    usetls: node.usetls || false,
+    compatmode: node.compatmode || false
+  });
+}
+
 function fixDuplicateMqttBrokers(originalNodes, migrationResult) {
-  // Preserve the broker references created by the migration library instead of
-  // rewriting them to a different MQTT config node ID. The original broker id in
-  // a Node-RED flow is the canonical value and should stay stable when the JSON is
-  // exported back out.
+  // The migration library can generate fresh MQTT broker config ids while updating
+  // every mqtt in/out node to point at those replacement ids. The original broker id
+  // is the canonical value in a flow export, so retain it instead of letting the
+  // conversion rewrite references to a generated config node id.
+  const flowNodes = Array.isArray(originalNodes)
+    ? originalNodes
+    : (originalNodes && Array.isArray(originalNodes.nodes)) ? originalNodes.nodes : [];
+
+  const migratedNodes = getMigrationNodes(migrationResult);
+  const originalBrokers = flowNodes.filter(node => node && node.type === 'mqtt-broker');
+  const migratedBrokers = migratedNodes.filter(node => node && node.type === 'mqtt-broker');
+
+  const originalBrokerSignatureMap = new Map();
+  for (const brokerNode of originalBrokers) {
+    const signature = getBrokerSignature(brokerNode);
+    if (signature) {
+      originalBrokerSignatureMap.set(signature, brokerNode.id);
+    }
+  }
+
+  const brokerIdMap = new Map();
+  for (const brokerNode of migratedBrokers) {
+    const signature = getBrokerSignature(brokerNode);
+    const originalId = originalBrokerSignatureMap.get(signature);
+
+    if (!originalId) {
+      continue;
+    }
+
+    brokerIdMap.set(brokerNode.id, originalId);
+    brokerNode.id = originalId;
+  }
+
+  for (const node of migratedNodes) {
+    if (node && typeof node.broker === 'string' && brokerIdMap.has(node.broker)) {
+      node.broker = brokerIdMap.get(node.broker);
+    }
+  }
+
+  if (Array.isArray(migrationResult)) {
+    return migratedNodes;
+  }
+
+  if (migrationResult && Array.isArray(migrationResult.nodes)) {
+    migrationResult.nodes = migratedNodes;
+    return migrationResult;
+  }
+
   return migrationResult;
 }
 
