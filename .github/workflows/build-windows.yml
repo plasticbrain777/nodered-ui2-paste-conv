@@ -1,6 +1,6 @@
 name: Build Windows EXE
 
-on:
+'on':
   workflow_dispatch:
   push:
     tags:
@@ -27,11 +27,6 @@ jobs:
 
       - name: Build Windows installer
         run: npm run build:win
-
-      - name: List build output
-        shell: pwsh
-        run: |
-          Get-ChildItem -Path .\dist -Recurse | Select-Object FullName
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
